@@ -295,7 +295,7 @@ VkResult createGraphicsPipeline() {
   VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo;
   fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   fragShaderStageCreateInfo.pNext = NULL;
-  vertShaderStageCreateInfo.flags = 0;
+  fragShaderStageCreateInfo.flags = 0;
   fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   fragShaderStageCreateInfo.module = fragShader;
   fragShaderStageCreateInfo.pName = "main";
