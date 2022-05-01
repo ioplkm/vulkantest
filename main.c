@@ -286,6 +286,7 @@ VkResult createGraphicsPipeline() {
   VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo;
   vertShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   vertShaderStageCreateInfo.pNext = NULL;
+  vertShaderStageCreateInfo.flags = 0;
   vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
   vertShaderStageCreateInfo.module = vertShader;
   vertShaderStageCreateInfo.pName = "main";
@@ -294,6 +295,7 @@ VkResult createGraphicsPipeline() {
   VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo;
   fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   fragShaderStageCreateInfo.pNext = NULL;
+  vertShaderStageCreateInfo.flags = 0;
   fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   fragShaderStageCreateInfo.module = fragShader;
   fragShaderStageCreateInfo.pName = "main";
@@ -304,6 +306,7 @@ VkResult createGraphicsPipeline() {
   VkPipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
   vertexInputInfo.pNext = NULL;
+  vertexInputInfo.flags = 0;
   vertexInputInfo.vertexBindingDescriptionCount = 0;
   vertexInputInfo.pVertexBindingDescriptions = NULL;
   vertexInputInfo.vertexAttributeDescriptionCount = 0;
@@ -341,6 +344,7 @@ VkResult createGraphicsPipeline() {
   VkPipelineRasterizationStateCreateInfo rasterizer;
   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
   rasterizer.pNext = NULL;
+  rasterizer.flags = 0;
   rasterizer.depthClampEnable = VK_FALSE;
   rasterizer.rasterizerDiscardEnable = VK_FALSE;
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
