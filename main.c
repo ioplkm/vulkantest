@@ -7,8 +7,9 @@
 #include "physicalDevice.h"
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
+uint32_t currentFrame = 0;
 
-GLFWwindow* window;
+GLFWwindow* pWindow;
 VkInstance instance;
 const char *const layerNames[] = {"VK_LAYER_KHRONOS_validation"}; 
 const char *const extensionNames[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; 
@@ -35,11 +36,11 @@ VkFramebuffer *pSwapchainFramebuffers;
 VkShaderModule vertShader, fragShader;
 
 VkCommandPool commandPool;
-VkCommandBuffer commandBuffer;
+VkCommandBuffer *pCommandBuffers;
 
-VkSemaphore imageAvailableSemaphore;
-VkSemaphore renderFinishedSemaphore;
-VkFence inFlightFence;
+VkSemaphore *pImageAvailableSemaphores;
+VkSemaphore *pRenderFinishedSemaphores;
+VkFence *pInFlightFences;
 
 GLFWwindow* initWindow() {
   glfwInit();
@@ -48,7 +49,7 @@ GLFWwindow* initWindow() {
   return glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
 }
 
-VkResult createInstance(VkInstance *pInstance) {
+VkResult createInstance() {
   VkApplicationInfo appInfo;
   appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
   appInfo.pNext = NULL;
@@ -77,14 +78,14 @@ VkResult createInstance(VkInstance *pInstance) {
   createInfo.enabledLayerCount = 0;
   createInfo.ppEnabledLayerNames = NULL;
 #endif
-  return vkCreateInstance(&createInfo, NULL, pInstance);
+  return vkCreateInstance(&createInfo, NULL, &instance);
 }
 
-int createSurface(VkInstance *pInstance, GLFWwindow *pWindow, VkSurfaceKHR *pSurface) {
-  return glfwCreateWindowSurface(*pInstance, pWindow, NULL, pSurface);
+int createSurface() {
+  return glfwCreateWindowSurface(instance, pWindow, NULL, &surface);
 }
 
-VkResult createDevice(VkPhysicalDevice *pPhysicalDevice, uint32_t graphicsQueueFamilyIndex, uint32_t presentQueueFamilyIndex, VkDevice *pDevice) {
+VkResult createDevice() {
   float queuePriority = 1.0f;
   
   VkDeviceQueueCreateInfo *pQueueCreateInfos = (VkDeviceQueueCreateInfo*)malloc(sizeof(VkDeviceQueueCreateInfo) * 2);
@@ -112,58 +113,58 @@ VkResult createDevice(VkPhysicalDevice *pPhysicalDevice, uint32_t graphicsQueueF
   createInfo.enabledExtensionCount = 1;
   createInfo.ppEnabledExtensionNames = extensionNames;
   createInfo.pEnabledFeatures = NULL;
-  return vkCreateDevice(*pPhysicalDevice, &createInfo, NULL, pDevice);
+  return vkCreateDevice(physicalDevice, &createInfo, NULL, &device);
 }
 
-void chooseImageFormatAndColorSpace(VkPhysicalDevice *pPhysicalDevice, VkSurfaceKHR *pSurface, VkFormat *pImageFormat, VkColorSpaceKHR *pColorSpace) {
+void chooseImageFormatAndColorSpace() {
   uint32_t surfaceFormatCount;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(*pPhysicalDevice, *pSurface, &surfaceFormatCount, NULL);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, NULL);
   VkSurfaceFormatKHR *surfaceFormats = (VkSurfaceFormatKHR*)malloc(sizeof(VkSurfaceFormatKHR) * surfaceFormatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(*pPhysicalDevice, *pSurface, &surfaceFormatCount, surfaceFormats);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, surfaceFormats);
 
-  *pImageFormat = surfaceFormats[0].format;
-  *pColorSpace = surfaceFormats[0].colorSpace;
+  swapchainImageFormat = surfaceFormats[0].format;
+  swapchainColorSpace = surfaceFormats[0].colorSpace;
   for (uint32_t i = 0; i < surfaceFormatCount; i++) {
     if (surfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB && surfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-      *pImageFormat = surfaceFormats[i].format;
-      *pColorSpace = surfaceFormats[i].colorSpace;
+      swapchainImageFormat = surfaceFormats[i].format;
+      swapchainColorSpace = surfaceFormats[i].colorSpace;
       break;
     }
   }  
 }
 
-void choosePresentMode(VkPhysicalDevice *pPhysicalDevice, VkSurfaceKHR *pSurface, VkPresentModeKHR *pSwapchainPresentMode) {
+void choosePresentMode() {
   uint32_t presentModeCount;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(*pPhysicalDevice, *pSurface, &presentModeCount, NULL);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, NULL);
   VkPresentModeKHR *presentModes = (VkPresentModeKHR*)malloc(sizeof(VkPresentModeKHR) * presentModeCount);
-  vkGetPhysicalDeviceSurfacePresentModesKHR(*pPhysicalDevice, *pSurface, &presentModeCount, presentModes);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes);
 
-  *pSwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+  swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
   for (uint32_t i = 0; i < presentModeCount; i++) 
     if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
-      *pSwapchainPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+      swapchainPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 }
 
-void findSwapchainExtent(GLFWwindow *pWindow, VkExtent2D *pSwapchainExtent) {
+void findSwapchainExtent() {
   int width, height;
   glfwGetFramebufferSize(pWindow, &width, &height); 
-  pSwapchainExtent->width = width;
-  pSwapchainExtent->height = height;
+  swapchainExtent.width = width;
+  swapchainExtent.height = height;
 }
 
-VkResult createSwapchain(VkPhysicalDevice *pPhysicalDevice, VkDevice *pDevice, VkSurfaceKHR *pSurface, VkFormat *pSwapchainImageFormat, VkColorSpaceKHR *pSwapchainColorSpace, VkPresentModeKHR swapchainPresentMode, VkExtent2D *pSwapchainExtent, uint32_t graphicsQueueFamilyIndex, uint32_t presentQueueFamilyIndex, VkSwapchainKHR *pSwapchain) { 
+VkResult createSwapchain(VkSwapchainKHR *pOldSwapchain) { 
   VkSurfaceCapabilitiesKHR surfaceCapabilities;
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(*pPhysicalDevice, *pSurface, &surfaceCapabilities);
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
 
   VkSwapchainCreateInfoKHR createInfo;
   createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
   createInfo.pNext = NULL;
   createInfo.flags = 0;
-  createInfo.surface = *pSurface;
+  createInfo.surface = surface;
   createInfo.minImageCount = surfaceCapabilities.minImageCount + 1;
-  createInfo.imageFormat = *pSwapchainImageFormat;
-  createInfo.imageColorSpace = *pSwapchainColorSpace;
-  createInfo.imageExtent = *pSwapchainExtent;
+  createInfo.imageFormat = swapchainImageFormat;
+  createInfo.imageColorSpace = swapchainColorSpace;
+  createInfo.imageExtent = swapchainExtent;
   createInfo.imageArrayLayers = 1;
   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   if (graphicsQueueFamilyIndex == presentQueueFamilyIndex) {
@@ -180,21 +181,17 @@ VkResult createSwapchain(VkPhysicalDevice *pPhysicalDevice, VkDevice *pDevice, V
   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   createInfo.presentMode = swapchainPresentMode;
   createInfo.clipped = VK_TRUE;
-  createInfo.oldSwapchain = VK_NULL_HANDLE;
-  return vkCreateSwapchainKHR(*pDevice, &createInfo, NULL, pSwapchain);
+  createInfo.oldSwapchain = pOldSwapchain == NULL ? VK_NULL_HANDLE : *pOldSwapchain;
+  return vkCreateSwapchainKHR(device, &createInfo, NULL, &swapchain);
 }
 
-VkResult getSwapchainImageCount(VkDevice *pDevice, VkSwapchainKHR *pSwapchain, uint32_t *pSwapchainImageCount) {
-  return vkGetSwapchainImagesKHR(*pDevice, *pSwapchain, pSwapchainImageCount, NULL);
+VkResult getSwapchainImages() {
+  pSwapchainImages = (VkImage*)malloc(sizeof(VkImage) * swapchainImageCount);
+  return vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, pSwapchainImages);
 }
 
-VkResult getSwapchainImages(VkDevice *pDevice, VkSwapchainKHR *pSwapchain, uint32_t swapchainImageCount, VkImage **ppSwapchainImages) {
-  *ppSwapchainImages = (VkImage*)malloc(sizeof(VkImage) * swapchainImageCount);
-  return vkGetSwapchainImagesKHR(*pDevice, *pSwapchain, &swapchainImageCount, *ppSwapchainImages);
-}
-
-void createImageViews(VkDevice *pDevice, VkImage *pSwapchainImages, VkFormat *pSwapchainImageFormat, uint32_t swapchainImageCount, VkImageView **ppSwapchainImageViews) {
-  *ppSwapchainImageViews = (VkImageView*)malloc(sizeof(VkImageView) * swapchainImageCount);
+void createImageViews() {
+  pSwapchainImageViews = (VkImageView*)malloc(sizeof(VkImageView) * swapchainImageCount);
   for (uint32_t i = 0; i < swapchainImageCount; i++) {
     VkImageViewCreateInfo createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -202,7 +199,7 @@ void createImageViews(VkDevice *pDevice, VkImage *pSwapchainImages, VkFormat *pS
     createInfo.flags = 0;
     createInfo.image = pSwapchainImages[i];
     createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    createInfo.format = *pSwapchainImageFormat;
+    createInfo.format = swapchainImageFormat;
     createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
     createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -212,14 +209,14 @@ void createImageViews(VkDevice *pDevice, VkImage *pSwapchainImages, VkFormat *pS
     createInfo.subresourceRange.levelCount = 1;
     createInfo.subresourceRange.baseArrayLayer = 0;
     createInfo.subresourceRange.layerCount = 1;
-    vkCreateImageView(*pDevice, &createInfo, NULL, &(*ppSwapchainImageViews)[i]);
+    vkCreateImageView(device, &createInfo, NULL, &pSwapchainImageViews[i]);
   }
 }
 
-VkResult createRenderPass(VkDevice *pDevice, VkFormat *pSwapchainImageFormat) {
+VkResult createRenderPass() {
   VkAttachmentDescription colorAttachment;
   colorAttachment.flags = 0;
-  colorAttachment.format = *pSwapchainImageFormat;
+  colorAttachment.format = swapchainImageFormat;
   colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
   colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -259,7 +256,7 @@ VkResult createRenderPass(VkDevice *pDevice, VkFormat *pSwapchainImageFormat) {
   renderPassInfo.pSubpasses = &subpass;
   renderPassInfo.dependencyCount = 1;
   renderPassInfo.pDependencies = &dependency;
-  return vkCreateRenderPass(*pDevice, &renderPassInfo, NULL, &renderPass);
+  return vkCreateRenderPass(device, &renderPassInfo, NULL, &renderPass);
 }
 
 VkResult createShader(const char *fileName, VkShaderModule *module) {
@@ -426,8 +423,8 @@ VkResult createGraphicsPipeline() {
   return res;
 }
 
-void createFramebuffers(VkDevice *pDevice, VkImageView *pSwapchainImageViews, VkExtent2D *pSwapchainExtent, uint32_t swapchainImageCount, VkFramebuffer **ppSwapchainFramebuffers) {
-  *ppSwapchainFramebuffers = (VkFramebuffer*)malloc(sizeof(VkFramebuffer) * swapchainImageCount);
+void createFramebuffers() {
+  pSwapchainFramebuffers = (VkFramebuffer*)malloc(sizeof(VkFramebuffer) * swapchainImageCount);
   for (uint32_t i = 0; i < swapchainImageCount; i++) {
     VkImageView attachments = pSwapchainImageViews[i];
 
@@ -437,45 +434,52 @@ void createFramebuffers(VkDevice *pDevice, VkImageView *pSwapchainImageViews, Vk
     framebufferInfo.renderPass = renderPass;
     framebufferInfo.attachmentCount = 1;
     framebufferInfo.pAttachments = &attachments;
-    framebufferInfo.width = pSwapchainExtent->width;
-    framebufferInfo.height = pSwapchainExtent->height;
+    framebufferInfo.width = swapchainExtent.width;
+    framebufferInfo.height = swapchainExtent.height;
     framebufferInfo.layers = 1;
-    vkCreateFramebuffer(*pDevice, &framebufferInfo, NULL, &(*ppSwapchainFramebuffers)[i]);
+    vkCreateFramebuffer(device, &framebufferInfo, NULL, &pSwapchainFramebuffers[i]);
   }
 }
 
-VkResult createCommandPool(VkDevice *pDevice, uint32_t graphicsQueueFamilyIndex) {
+VkResult createCommandPool() {
   VkCommandPoolCreateInfo poolInfo;
   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   poolInfo.pNext = NULL;
   poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   poolInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
-  return vkCreateCommandPool(*pDevice, &poolInfo, NULL, &commandPool);  
+  return vkCreateCommandPool(device, &poolInfo, NULL, &commandPool);  
 }
 
-VkResult createCommandBuffer(VkDevice *pDevice, VkCommandPool *pCommandPool, VkCommandBuffer *pCommandBuffer) {
+VkResult createCommandBuffers() {
+  pCommandBuffers = (VkCommandBuffer*)malloc(sizeof(VkCommandBuffer) * MAX_FRAMES_IN_FLIGHT);
   VkCommandBufferAllocateInfo allocateInfo;
   allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   allocateInfo.pNext = NULL;
-  allocateInfo.commandPool = *pCommandPool;
+  allocateInfo.commandPool = commandPool;
   allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocateInfo.commandBufferCount = 1;
-  return vkAllocateCommandBuffers(*pDevice, &allocateInfo, pCommandBuffer);
+  allocateInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+  return vkAllocateCommandBuffers(device, &allocateInfo, pCommandBuffers);
 }
 
-void createSyncObjects(VkDevice *pDevice) {
+void createSyncObjects() {
+  pImageAvailableSemaphores = (VkSemaphore*)malloc(sizeof(VkSemaphore) * MAX_FRAMES_IN_FLIGHT);
+  pRenderFinishedSemaphores = (VkSemaphore*)malloc(sizeof(VkSemaphore) * MAX_FRAMES_IN_FLIGHT);
+  pInFlightFences = (VkFence*)malloc(sizeof(VkFence) * MAX_FRAMES_IN_FLIGHT);
+
   VkSemaphoreCreateInfo semaphoreInfo;
   semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
   semaphoreInfo.pNext = NULL;
   semaphoreInfo.flags = 0;
-  vkCreateSemaphore(*pDevice, &semaphoreInfo, NULL, &imageAvailableSemaphore);
-  vkCreateSemaphore(*pDevice, &semaphoreInfo, NULL, &renderFinishedSemaphore);
 
   VkFenceCreateInfo fenceInfo;
   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fenceInfo.pNext = NULL;
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-  vkCreateFence(*pDevice, &fenceInfo, NULL, &inFlightFence);
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    vkCreateSemaphore(device, &semaphoreInfo, NULL, &pImageAvailableSemaphores[i]);
+    vkCreateSemaphore(device, &semaphoreInfo, NULL, &pRenderFinishedSemaphores[i]);
+    vkCreateFence(device, &fenceInfo, NULL, &pInFlightFences[i]);
+  }
 }
 
 int recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -505,28 +509,60 @@ int recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
   return 0;
 }
 
+void cleanupSwapchain() {
+  for (uint32_t i = 0; i < swapchainImageCount; i++)
+    vkDestroyFramebuffer(device, pSwapchainFramebuffers[i], NULL);
+  vkDestroyPipeline(device, graphicsPipeline, NULL);
+  vkDestroyPipelineLayout(device, pipelineLayout, NULL);
+  vkDestroyRenderPass(device, renderPass, NULL);
+  for (uint32_t i = 0; i < swapchainImageCount; i++) 
+    vkDestroyImageView(device, pSwapchainImageViews[i], NULL);
+  free(pSwapchainImageViews);
+  free(pSwapchainImages);
+  vkDestroySwapchainKHR(device, swapchain, NULL);
+}
+
+void recreateSwapchain() {
+  printf("called\n");
+  vkDeviceWaitIdle(device);
+
+  cleanupSwapchain();
+
+  chooseImageFormatAndColorSpace();
+  choosePresentMode();  
+  findSwapchainExtent();
+  createSwapchain(&swapchain);
+  vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, NULL);
+  getSwapchainImages();
+  createImageViews();
+  createRenderPass();
+  createGraphicsPipeline();
+  createFramebuffers();
+}
+
 void drawFrame() {
-  vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX - 1);
-  vkResetFences(device, 1, &inFlightFence);
+  vkWaitForFences(device, 1, &pInFlightFences[currentFrame], VK_TRUE, UINT64_MAX - 1);
+  vkResetFences(device, 1, &pInFlightFences[currentFrame]);
   uint32_t imageIndex;
-  vkAcquireNextImageKHR(device, swapchain, UINT64_MAX - 1, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-  vkResetCommandBuffer(commandBuffer, 0);
-  recordCommandBuffer(commandBuffer, imageIndex);
+  VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX - 1, pImageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+  if (res == VK_ERROR_OUT_OF_DATE_KHR) recreateSwapchain();
+  vkResetCommandBuffer(pCommandBuffers[currentFrame], 0);
+  recordCommandBuffer(pCommandBuffers[currentFrame], imageIndex);
 
   VkSubmitInfo submitInfo;
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submitInfo.pNext = NULL;
-  VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+  VkSemaphore waitSemaphores[] = {pImageAvailableSemaphores[currentFrame]};
   submitInfo.waitSemaphoreCount = 1;
   submitInfo.pWaitSemaphores = waitSemaphores;
   VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   submitInfo.pWaitDstStageMask = waitStages;
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
-  VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+  submitInfo.pCommandBuffers = &pCommandBuffers[currentFrame];
+  VkSemaphore signalSemaphores[] = {pRenderFinishedSemaphores[currentFrame]};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
-  vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
+  vkQueueSubmit(graphicsQueue, 1, &submitInfo, pInFlightFences[currentFrame]);
 
   VkPresentInfoKHR presentInfo;
   presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -538,10 +574,11 @@ void drawFrame() {
   presentInfo.pImageIndices = &imageIndex;
   presentInfo.pResults = NULL;
   vkQueuePresentKHR(presentQueue, &presentInfo);
+  currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void mainLoop() {
-  while(!glfwWindowShouldClose(window)) {
+  while(!glfwWindowShouldClose(pWindow)) {
     glfwPollEvents();
     drawFrame();
   }
@@ -549,48 +586,43 @@ void mainLoop() {
 }
 
 void cleanup() {
-  vkDestroySemaphore(device, imageAvailableSemaphore, NULL);
-  vkDestroySemaphore(device, renderFinishedSemaphore, NULL);
-  vkDestroyFence(device, inFlightFence, NULL);
+  cleanupSwapchain();
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    vkDestroySemaphore(device, pImageAvailableSemaphores[i], NULL);
+    vkDestroySemaphore(device, pRenderFinishedSemaphores[i], NULL);
+    vkDestroyFence(device, pInFlightFences[i], NULL);
+  }
+  free(pCommandBuffers);
   vkDestroyCommandPool(device, commandPool, NULL);
-  for (uint32_t i = 0; i < swapchainImageCount; i++)
-    vkDestroyFramebuffer(device, pSwapchainFramebuffers[i], NULL);
-  vkDestroyPipeline(device, graphicsPipeline, NULL);
-  vkDestroyPipelineLayout(device, pipelineLayout, NULL);
-  vkDestroyRenderPass(device, renderPass, NULL);
-  for (uint32_t i = 0; i < swapchainImageCount; i++) 
-    vkDestroyImageView(device, pSwapchainImageViews[i], NULL);
-  free(pSwapchainImageViews);
-  free(pSwapchainImages);
-  vkDestroySwapchainKHR(device, swapchain, NULL);
   vkDestroyDevice(device, NULL);
   vkDestroySurfaceKHR(instance, surface, NULL);
   vkDestroyInstance(instance, NULL);
-  glfwDestroyWindow(window);
+  glfwDestroyWindow(pWindow);
   glfwTerminate();
 }
 
 int main() {
-  window = initWindow();
-  createInstance(&instance);
-  createSurface(&instance, window, &surface);
+
+  pWindow = initWindow();
+  createInstance();
+  createSurface();
   pickPhysicalDevice(&physicalDevice, &graphicsQueueFamilyIndex, &presentQueueFamilyIndex);
-  createDevice(&physicalDevice, graphicsQueueFamilyIndex, presentQueueFamilyIndex, &device);
+  createDevice();
   vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
   vkGetDeviceQueue(device, presentQueueFamilyIndex, 0, &presentQueue);
-  chooseImageFormatAndColorSpace(&physicalDevice, &surface, &swapchainImageFormat, &swapchainColorSpace);
-  choosePresentMode(&physicalDevice, &surface, &swapchainPresentMode);  
-  findSwapchainExtent(window, &swapchainExtent);
-  createSwapchain(&physicalDevice, &device, &surface, &swapchainImageFormat, &swapchainColorSpace, swapchainPresentMode, &swapchainExtent, graphicsQueueFamilyIndex, presentQueueFamilyIndex, &swapchain);
-  getSwapchainImageCount(&device, &swapchain, &swapchainImageCount);
-  getSwapchainImages(&device, &swapchain, swapchainImageCount, &pSwapchainImages);
-  createImageViews(&device, pSwapchainImages, &swapchainImageFormat, swapchainImageCount, &pSwapchainImageViews);
-  createRenderPass(&device, &swapchainImageFormat);
+  chooseImageFormatAndColorSpace();
+  choosePresentMode();  
+  findSwapchainExtent();
+  createSwapchain(VK_NULL_HANDLE);
+  vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, NULL);
+  getSwapchainImages();
+  createImageViews();
+  createRenderPass();
   createGraphicsPipeline();
-  createFramebuffers(&device, pSwapchainImageViews, &swapchainExtent, swapchainImageCount, &pSwapchainFramebuffers);
-  createCommandPool(&device, graphicsQueueFamilyIndex);
-  createCommandBuffer(&device, &commandPool, &commandBuffer);
-  createSyncObjects(&device);
+  createFramebuffers();
+  createCommandPool();
+  createCommandBuffers();
+  createSyncObjects();
   mainLoop();
   cleanup();
   return EXIT_SUCCESS;
