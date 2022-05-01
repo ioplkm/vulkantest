@@ -545,7 +545,7 @@ void drawFrame() {
   vkResetFences(device, 1, &pInFlightFences[currentFrame]);
   uint32_t imageIndex;
   VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX - 1, pImageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
-  if (res == VK_ERROR_OUT_OF_DATE_KHR) recreateSwapchain();
+  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) recreateSwapchain();
   vkResetCommandBuffer(pCommandBuffers[currentFrame], 0);
   recordCommandBuffer(pCommandBuffers[currentFrame], imageIndex);
 
@@ -573,7 +573,8 @@ void drawFrame() {
   presentInfo.pSwapchains = swapchains;
   presentInfo.pImageIndices = &imageIndex;
   presentInfo.pResults = NULL;
-  vkQueuePresentKHR(presentQueue, &presentInfo);
+  res = vkQueuePresentKHR(presentQueue, &presentInfo);
+  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) recreateSwapchain();
   currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
