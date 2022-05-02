@@ -42,11 +42,18 @@ VkSemaphore *pImageAvailableSemaphores;
 VkSemaphore *pRenderFinishedSemaphores;
 VkFence *pInFlightFences;
 
-GLFWwindow* initWindow() {
+bool framebufferResized = false;
+
+void framebufferResizeCallback(GLFWwindow *pWindow, int width, int height) {
+  framebufferResized = true;
+}
+
+void initWindow() {
   glfwInit();
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-  return glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+  pWindow = glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
+  glfwSetFramebufferSizeCallback(pWindow, framebufferResizeCallback);
 }
 
 VkResult createInstance() {
@@ -152,7 +159,7 @@ void findSwapchainExtent() {
   swapchainExtent.height = height;
 }
 
-VkResult createSwapchain(VkSwapchainKHR *pOldSwapchain) { 
+VkResult createSwapchain() { 
   VkSurfaceCapabilitiesKHR surfaceCapabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
 
@@ -181,7 +188,7 @@ VkResult createSwapchain(VkSwapchainKHR *pOldSwapchain) {
   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   createInfo.presentMode = swapchainPresentMode;
   createInfo.clipped = VK_TRUE;
-  createInfo.oldSwapchain = pOldSwapchain == NULL ? VK_NULL_HANDLE : *pOldSwapchain;
+  createInfo.oldSwapchain = VK_NULL_HANDLE;
   return vkCreateSwapchainKHR(device, &createInfo, NULL, &swapchain);
 }
 
@@ -329,7 +336,7 @@ VkResult createGraphicsPipeline() {
 
   VkRect2D scissor;
   scissor.offset.x = 0;
-  scissor.offset.x = 0;
+  scissor.offset.y = 0;
   scissor.extent = swapchainExtent;
 
   VkPipelineViewportStateCreateInfo viewportState;
@@ -523,11 +530,11 @@ void cleanupSwapchain() {
     vkDestroyImageView(device, pSwapchainImageViews[i], NULL);
   free(pSwapchainImageViews);
   free(pSwapchainImages);
+  free(pSwapchainFramebuffers);
   vkDestroySwapchainKHR(device, swapchain, NULL);
 }
 
 void recreateSwapchain() {
-  printf("called\n");
   vkDeviceWaitIdle(device);
 
   cleanupSwapchain();
@@ -535,7 +542,7 @@ void recreateSwapchain() {
   chooseImageFormatAndColorSpace();
   choosePresentMode();  
   findSwapchainExtent();
-  createSwapchain(&swapchain);
+  createSwapchain();
   vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, NULL);
   getSwapchainImages();
   createImageViews();
@@ -546,10 +553,14 @@ void recreateSwapchain() {
 
 void drawFrame() {
   vkWaitForFences(device, 1, &pInFlightFences[currentFrame], VK_TRUE, UINT64_MAX - 1);
-  vkResetFences(device, 1, &pInFlightFences[currentFrame]);
   uint32_t imageIndex;
   VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX - 1, pImageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
-  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) recreateSwapchain();
+  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+    recreateSwapchain();
+    return;
+  }
+  vkResetFences(device, 1, &pInFlightFences[currentFrame]);
+
   vkResetCommandBuffer(pCommandBuffers[currentFrame], 0);
   recordCommandBuffer(pCommandBuffers[currentFrame], imageIndex);
 
@@ -578,7 +589,10 @@ void drawFrame() {
   presentInfo.pImageIndices = &imageIndex;
   presentInfo.pResults = NULL;
   res = vkQueuePresentKHR(presentQueue, &presentInfo);
-  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) recreateSwapchain();
+  if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR || framebufferResized) {
+    framebufferResized = false;
+    recreateSwapchain();
+  }
   currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -607,8 +621,7 @@ void cleanup() {
 }
 
 int main() {
-
-  pWindow = initWindow();
+  initWindow();
   createInstance();
   createSurface();
   pickPhysicalDevice(&physicalDevice, &graphicsQueueFamilyIndex, &presentQueueFamilyIndex);
@@ -618,7 +631,7 @@ int main() {
   chooseImageFormatAndColorSpace();
   choosePresentMode();  
   findSwapchainExtent();
-  createSwapchain(VK_NULL_HANDLE);
+  createSwapchain();
   vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, NULL);
   getSwapchainImages();
   createImageViews();
