@@ -1,8 +1,11 @@
-#include <vulkan/vulkan.h>
-#include <GLFW/glfw3.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h> //for memcpy()
+
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+#include <cglm/cglm.h>
 
 #include "physicalDevice.h"
 
@@ -32,6 +35,8 @@ VkRenderPass renderPass;
 VkPipelineLayout pipelineLayout;
 VkPipeline graphicsPipeline;
 VkFramebuffer *pSwapchainFramebuffers;
+VkBuffer vertexBuffer;
+VkDeviceMemory vertexBufferMemory;
 
 VkShaderModule vertShader, fragShader;
 
@@ -44,7 +49,19 @@ VkFence *pInFlightFences;
 
 bool framebufferResized = false;
 
-void framebufferResizeCallback(GLFWwindow *pWindow, int width, int height) {
+typedef struct vertex {
+  vec2 pos;
+  vec3 color;
+} vertex;
+
+vertex vertices[3] = {    
+  {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
+//void framebufferResizeCallback(GLFWwindow *pWindow, int width, int height) {
+void framebufferResizeCallback() {
   framebufferResized = true;
 }
 
@@ -310,14 +327,29 @@ VkResult createGraphicsPipeline() {
 
   VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
 
+  VkVertexInputBindingDescription bindingDescription;
+  bindingDescription.binding = 0;
+  bindingDescription.stride = sizeof(vertex);
+  bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  VkVertexInputAttributeDescription attributeDescriptions[2];
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(vertex, pos);
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(vertex, color);
+
   VkPipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
   vertexInputInfo.pNext = NULL;
   vertexInputInfo.flags = 0;
-  vertexInputInfo.vertexBindingDescriptionCount = 0;
-  vertexInputInfo.pVertexBindingDescriptions = NULL;
-  vertexInputInfo.vertexAttributeDescriptionCount = 0;
-  vertexInputInfo.pVertexAttributeDescriptions = NULL;
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+  vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+  vertexInputInfo.vertexAttributeDescriptionCount = 2;
+  vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions;
 
   VkPipelineInputAssemblyStateCreateInfo inputAssembly;
   inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -461,6 +493,43 @@ VkResult createCommandPool() {
   return vkCreateCommandPool(device, &poolInfo, NULL, &commandPool);  
 }
 
+uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+  VkPhysicalDeviceMemoryProperties memProperties;
+  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) return i;
+  }
+  return 0; //should be unreachable
+}
+
+void createVertexBuffer() {
+  VkBufferCreateInfo bufferInfo;
+  bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  bufferInfo.pNext = NULL;
+  bufferInfo.flags = 0;
+  bufferInfo.size = sizeof(vertex) * 3;
+  bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  vkCreateBuffer(device, &bufferInfo, NULL, &vertexBuffer);
+
+  VkMemoryRequirements memRequirements;
+  vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+  VkMemoryAllocateInfo allocateInfo;
+  allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  allocateInfo.pNext = NULL;
+  allocateInfo.allocationSize = memRequirements.size;
+  allocateInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  vkAllocateMemory(device, &allocateInfo, NULL, &vertexBufferMemory);
+
+  vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+  void *data;
+  vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+  memcpy(data, vertices, (size_t)bufferInfo.size);
+  vkUnmapMemory(device, vertexBufferMemory);
+}
+
 VkResult createCommandBuffers() {
   pCommandBuffers = (VkCommandBuffer*)malloc(sizeof(VkCommandBuffer) * MAX_FRAMES_IN_FLIGHT);
   VkCommandBufferAllocateInfo allocateInfo;
@@ -514,6 +583,9 @@ int recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
   renderPassInfo.pClearValues = &clearColor;
   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+  VkBuffer vertexBuffers[] = {vertexBuffer};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
   vkCmdEndRenderPass(commandBuffer);
   vkEndCommandBuffer(commandBuffer);
@@ -581,6 +653,7 @@ void drawFrame() {
 
   VkPresentInfoKHR presentInfo;
   presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  presentInfo.pNext = NULL;
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pWaitSemaphores = signalSemaphores;
   VkSwapchainKHR swapchains[] = {swapchain};
@@ -606,6 +679,8 @@ void mainLoop() {
 
 void cleanup() {
   cleanupSwapchain();
+  vkDestroyBuffer(device, vertexBuffer, NULL);
+  vkFreeMemory(device, vertexBufferMemory, NULL);
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     vkDestroySemaphore(device, pImageAvailableSemaphores[i], NULL);
     vkDestroySemaphore(device, pRenderFinishedSemaphores[i], NULL);
@@ -639,6 +714,7 @@ int main() {
   createGraphicsPipeline();
   createFramebuffers();
   createCommandPool();
+  createVertexBuffer();
   createCommandBuffers();
   createSyncObjects();
   mainLoop();
