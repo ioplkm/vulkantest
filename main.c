@@ -35,8 +35,11 @@ VkRenderPass renderPass;
 VkPipelineLayout pipelineLayout;
 VkPipeline graphicsPipeline;
 VkFramebuffer *pSwapchainFramebuffers;
+
 VkBuffer vertexBuffer;
 VkDeviceMemory vertexBufferMemory;
+VkBuffer indexBuffer;
+VkDeviceMemory indexBufferMemory;
 
 VkShaderModule vertShader, fragShader;
 
@@ -54,11 +57,15 @@ typedef struct vertex {
   vec3 color;
 } vertex;
 
-vertex vertices[3] = {    
-  {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+#define VERTICES 4
+vertex vertices[VERTICES] = {    
+  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+  {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}}
 };
+#define INDICES 6
+uint16_t indices[INDICES] = {0, 1, 2, 2, 3, 0};
 
 void framebufferResizeCallback() {
   framebufferResized = true;
@@ -564,12 +571,32 @@ void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
   vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void createVertexBuffer() {
-  VkDeviceSize bufferSize = sizeof(vertex) * 3;
+void createIndexBuffer() {
+  VkDeviceSize bufferSize = sizeof(uint16_t) * INDICES;
   VkBuffer stagingBuffer;
   VkDeviceMemory stagingBufferMemory;
 
-  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &stagingBuffer, &stagingBufferMemory);
+  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &stagingBuffer, &stagingBufferMemory);
+
+  void *data;
+  vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+  memcpy(data, indices, (size_t)bufferSize);
+  vkUnmapMemory(device, stagingBufferMemory);
+
+  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &indexBuffer, &indexBufferMemory);
+
+  copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+
+  vkDestroyBuffer(device, stagingBuffer, NULL);
+  vkFreeMemory(device, stagingBufferMemory, NULL);
+}
+
+void createVertexBuffer() {
+  VkDeviceSize bufferSize = sizeof(vertex) * VERTICES;
+  VkBuffer stagingBuffer;
+  VkDeviceMemory stagingBufferMemory;
+
+  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &stagingBuffer, &stagingBufferMemory);
 
   void *data;
   vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
@@ -636,11 +663,13 @@ int recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
   renderPassInfo.clearValueCount = 1;
   renderPassInfo.pClearValues = &clearColor;
   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-  VkBuffer vertexBuffers[] = {vertexBuffer};
-  VkDeviceSize offsets[] = {0};
-  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-  vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    VkBuffer vertexBuffers[] = {vertexBuffer};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(commandBuffer, (uint32_t)INDICES, 1, 0, 0, 0);
+    //vkCmdDraw(commandBuffer, VERTICES, 1, 0, 0);
   vkCmdEndRenderPass(commandBuffer);
   vkEndCommandBuffer(commandBuffer);
   return 0;
@@ -733,6 +762,8 @@ void mainLoop() {
 
 void cleanup() {
   cleanupSwapchain();
+  vkDestroyBuffer(device, indexBuffer, NULL);
+  vkFreeMemory(device, indexBufferMemory, NULL);
   vkDestroyBuffer(device, vertexBuffer, NULL);
   vkFreeMemory(device, vertexBufferMemory, NULL);
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -769,6 +800,7 @@ int main() {
   createFramebuffers();
   createCommandPool();
   createVertexBuffer();
+  createIndexBuffer();
   createCommandBuffers();
   createSyncObjects();
   mainLoop();
